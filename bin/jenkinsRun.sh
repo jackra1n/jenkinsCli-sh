@@ -14,9 +14,8 @@ function health(){
     BRANCH=$1
     BRANCH_ENCODED=`encodeForDownload $BRANCH`
     local JOBS=( $(getAvailableTestJobs) )
-    local STATE=`jobStatus JOBS[@]`
-    for S in ${STATE[*]}; do
-        printf "${S}\n"
+    for JB in ${JOBS[*]}; do
+        printf "%s ... %s\n" "$JB" "$(getHealth ${JB} ${BRANCH_ENCODED})"
     done
 }
 
@@ -29,7 +28,7 @@ function triggerBuilds() {
 
     if [ "$HEALTH" == "true" ]; then
       gum style --bold --foreground 3 "Getting health of ${COLOR_BRANCH}"
-      watch -d "${DIR}/jenkinsRun.sh health '${BRANCH}'"
+      FORCE_COLORS=true watch --color -d "${DIR}/jenkinsRun.sh health '${BRANCH}'"
     else
       gum style --bold --foreground 2 "Triggering builds for ${COLOR_BRANCH}"
       SEL_JOBS=${JOBS[@]}
@@ -84,14 +83,7 @@ function triggerBuilds() {
   done
 }
 
-function jobStatus(){
-    declare -a JBS=("${!1}")
-    local jobState=()
-    for JB in ${JBS[*]}; do
-        jobState+=("$JB...$(getHealth ${JB} ${BRANCH_ENCODED})")
-    done
-    echo ${jobState[@]}
-}
+
 
 function noColor(){
   echo -E $1 | sed -E "s/\x1B\[(([0-9]{1,2})?(;)?([0-9]{1,2})?)?[m,K,H,f,J]//g"

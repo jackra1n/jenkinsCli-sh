@@ -84,23 +84,42 @@ getHealth(){
   API_URI="${BASE_URL}/job/${JOB}/job/${BRANCH}/api/json?tree=color"
   JSON=$(curl -sS "${API_URI}")
   COLOR=$(jsonField "${JSON}" "color")
-  colorToEmo $COLOR
+  colorToTextIndicator $COLOR
 }
 
-colorToEmo(){
+colorToTextIndicator(){
   local COLOR=$1
   if [ -z "$COLOR" ]; then
-    COLOR="❔"
+    echo "${C_BLUE}[ ? ]${C_OFF}"
+    return
   fi
-  local EMO=$(echo $COLOR \
-   | sed 's|yellow|⚠️|' \
-   | sed 's|blue|🆗|' \
-   | sed 's|red|💔|' \
-   | sed 's|disabled|🔧|' \
-   | sed 's|_anime|🏃🏃🏃|' \
-   | sed 's|notbuilt|💤|'
-   )
-  echo $EMO
+  
+  # Handle _anime suffix for running builds
+  if [[ "$COLOR" == *"_anime" ]]; then
+    echo "${C_YELLOW}[ ~ ]${C_OFF}"
+    return
+  fi
+  
+  case "$COLOR" in
+    "blue")
+      echo "${C_GREEN}[ ✓ ]${C_OFF}"
+      ;;
+    "red")
+      echo "${C_RED}[ ✗ ]${C_OFF}"
+      ;;
+    "yellow")
+      echo "${C_YELLOW}[ ~ ]${C_OFF}"
+      ;;
+    "disabled")
+      echo "${C_GRAY}[ - ]${C_OFF}"
+      ;;
+    "notbuilt")
+      echo "${C_BLUE}[ ? ]${C_OFF}"
+      ;;
+    *)
+      echo "${C_BLUE}[ ? ]${C_OFF}"
+      ;;
+  esac
 }
 
 jsonField(){
@@ -108,10 +127,23 @@ jsonField(){
   echo $1 | grep -o -E "\"${FIELD}\":\"([^\"]*)" | sed -e "s|\"${FIELD}\":\"||g"
 }
 
-C_GREEN="$(tput setaf 2)"
-C_RED="$(tput setaf 1)"
-C_YELLOW="$(tput setaf 3)"
-C_OFF="$(tput sgr0)"
+# Initialize colors if terminal supports them or if explicitly requested for health display
+if ([[ -t 1 ]] || [[ "$FORCE_COLORS" == "true" ]]) && command -v tput >/dev/null 2>&1 && tput colors >/dev/null 2>&1; then
+  C_GREEN="$(tput setaf 2)"
+  C_RED="$(tput setaf 1)"
+  C_YELLOW="$(tput setaf 3)"
+  C_BLUE="$(tput setaf 4)"
+  C_GRAY="$(tput setaf 8)"
+  C_OFF="$(tput sgr0)"
+else
+  # Fallback to no colors if terminal doesn't support them
+  C_GREEN=""
+  C_RED=""
+  C_YELLOW=""
+  C_BLUE=""
+  C_GRAY=""
+  C_OFF=""
+fi
 
 statusColor(){
   local STATUS=$1
