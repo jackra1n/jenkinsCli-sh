@@ -10,6 +10,59 @@ if ! command -v gum >/dev/null 2>&1; then
 fi
 
 
+function renderHealthStatus() {
+    local -n JOBS_ARRAY="$1"
+    local BRANCH="$2"
+
+    local TERM_WIDTH=$(tput cols 2>/dev/null || echo 100)
+    local CONTENT_WIDTH=$((TERM_WIDTH - 6))  # account for border and padding
+    
+    # find the longest job name for consistent alignment
+    local MAX_JOB_LENGTH=0
+    for JOB_ENTRY in "${JOBS_ARRAY[@]}"; do
+        local JOB_NAME="${JOB_ENTRY%...*}"
+        local JOB_LENGTH=${#JOB_NAME}
+        if [ $JOB_LENGTH -gt $MAX_JOB_LENGTH ]; then
+            MAX_JOB_LENGTH=$JOB_LENGTH
+        fi
+    done
+    
+    # handle very long job names
+    if [ $MAX_JOB_LENGTH -lt 20 ]; then
+        MAX_JOB_LENGTH=20
+    elif [ $MAX_JOB_LENGTH -gt $((CONTENT_WIDTH - 15)) ]; then
+        MAX_JOB_LENGTH=$((CONTENT_WIDTH - 15))
+    fi
+
+    local CONTENT=""
+    local HEADER="Jenkins Health Status - Branch: ${C_GREEN}${BRANCH}${C_OFF}"
+    CONTENT+="${HEADER}\n\n"
+
+    for JOB_ENTRY in "${JOBS_ARRAY[@]}"; do
+        local JOB_NAME="${JOB_ENTRY%...*}"
+        local STATUS_INDICATOR="${JOB_ENTRY#*...}"
+        
+        # cut off job name if too long
+        if [ ${#JOB_NAME} -gt $MAX_JOB_LENGTH ]; then
+            JOB_NAME="${JOB_NAME:0:$((MAX_JOB_LENGTH-3))}..."
+        fi
+        
+        # format with consistent spacing
+        printf -v FORMATTED_LINE "%-${MAX_JOB_LENGTH}s  %s" "$JOB_NAME" "$STATUS_INDICATOR"
+        CONTENT+="${FORMATTED_LINE}\n"
+    done
+    
+    # remove trailing newline
+    CONTENT="${CONTENT%\\n}"
+
+    echo -e "$CONTENT" | gum style \
+        --border rounded \
+        --border-foreground 4 \
+        --padding "1 2" \
+        --margin "1 0" \
+        --width "$CONTENT_WIDTH"
+}
+
 function health(){
     BRANCH=$1
     BRANCH_ENCODED=`encodeForDownload $BRANCH`
