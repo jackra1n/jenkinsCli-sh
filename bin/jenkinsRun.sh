@@ -3,6 +3,12 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source "$DIR/jenkinsOp.sh"
 
+# ensure gum CLI is available
+if ! command -v gum >/dev/null 2>&1; then
+  echo "❌  The 'gum' CLI tool is required for this script. Please install it first: https://github.com/charmbracelet/gum" >&2
+  exit 1
+fi
+
 
 function health(){
     BRANCH=$1
@@ -15,66 +21,67 @@ function health(){
 }
 
 function triggerBuilds() {
-    BRANCH=$1
-    local JOBS=( $(getAvailableTestJobs) )
-    
-    COLOR_BRANCH=${C_GREEN}${BRANCH}${C_OFF}
-    if [ "$HEALTH" == "true" ] ; then
-        echo -e "getting health of ${COLOR_BRANCH}"
-        watch -d "${DIR}/jenkinsRun.sh health '${BRANCH}'"
+  local BRANCH="$1"
+  local JOBS=( $(getAvailableTestJobs) )
+
+  while true; do
+    local COLOR_BRANCH="${C_GREEN}${BRANCH}${C_OFF}"
+
+    if [ "$HEALTH" == "true" ]; then
+      gum style --bold --foreground 3 "Getting health of ${COLOR_BRANCH}"
+      watch -d "${DIR}/jenkinsRun.sh health '${BRANCH}'"
     else
-        echo -e "triggering builds for ${COLOR_BRANCH}"
-        SEL_JOBS=${JOBS[@]}
+      gum style --bold --foreground 2 "Triggering builds for ${COLOR_BRANCH}"
+      SEL_JOBS=${JOBS[@]}
     fi
-    
+
+    # reset flags each iteration
     HEALTH="false"
     FILTERED="true"
 
     local PRE_ACTIONS=('!leave:exit' '!health' '!getDesigner' '!getEngine')
-
     local POST_ACTIONS=('!new_view')
     if ! [ -z "${JOB_FILTER}" ]; then
-        POST_ACTIONS+=('...more')
+      POST_ACTIONS+=("...more")
     fi
 
-    select RUN in ${PRE_ACTIONS[@]} ${SEL_JOBS[@]} ${POST_ACTIONS[@]} 
-    do
-        BRANCH_ENCODED=`encodeForDownload $BRANCH`
-        if [ "$RUN" == "!leave:exit" ] ; then
-            break
-        fi
-        if [ "$RUN" == "!health" ] ; then
-            HEALTH="true"
-            break;
-        fi
-        if [ "$RUN" == "!getDesigner" ] ; then
-            echo $($DIR/newDesigner.sh "$BRANCH_ENCODED")
-            break
-        fi
-        if [ "$RUN" == "!getEngine" ] ; then
-            echo $($DIR/newEngine.sh "$BRANCH_ENCODED")
-            break
-        fi
-        if [ "$RUN" == "!new_view" ] ; then
-            echo "$(createView $BRANCH)"
-            break
-        fi
-        if [ "$RUN" == "...more" ] ; then
-            FILTERED="false"
-            export JOB_FILTER=""
-            break
-        fi
+    local OPTIONS=( "${PRE_ACTIONS[@]}" ${SEL_JOBS[@]} "${POST_ACTIONS[@]}" )
 
-        JOB_RAW=$(sed 's|\.\.\..*||' <<< $RUN )
-        echo $(triggerBuild ${JOB_RAW} $BRANCH_ENCODED)
-    done
-    
-    if [ "$HEALTH" == "true" ] ; then
-        triggerBuilds $1
+    local LINES=$(tput lines)
+    local RUN
+    RUN=$(gum choose --height $((LINES-5)) "${OPTIONS[@]}")
+
+    # User aborted selection
+    if [ -z "$RUN" ]; then
+      break
     fi
-    if [ "$FILTERED" == "false" ] ; then
-        triggerBuilds $1
+
+    local BRANCH_ENCODED=$(encodeForDownload "$BRANCH")
+
+    case "$RUN" in
+      "!leave:exit") break ;;
+      "!health") HEALTH="true" ;;
+      "!getDesigner")
+        echo "$($DIR/newDesigner.sh "$BRANCH_ENCODED")" ;;
+      "!getEngine")
+        echo "$($DIR/newEngine.sh "$BRANCH_ENCODED")" ;;
+      "!new_view")
+        createView "$BRANCH" ;;
+      "...more")
+        FILTERED="false"
+        export JOB_FILTER="" ;;
+      *)
+        local JOB_RAW=$(sed 's|\.\.\..*||' <<< "$RUN")
+        triggerBuild "$JOB_RAW" "$BRANCH_ENCODED" ;;
+    esac
+
+    # decide whether to prompt again
+    if [ "$HEALTH" == "true" ] || [ "$FILTERED" == "false" ]; then
+      continue
+    else
+      break
     fi
+  done
 }
 
 function jobStatus(){
@@ -124,25 +131,24 @@ function chooseBranch() {
 
   echo "SELECT branch of $(origin)"
   LINES=$(tput lines)
-  echo "LINES=$LINES"
-  OPTION=$(gum choose --height $(($LINES-5)) ${OPTIONS[@]})
+  OPTION=$(gum choose --height $(($LINES-5)) "${OPTIONS[@]}")
   case $OPTION in 
       "!re-scan")
           echo 're-scanning [beta]'
           rescanBranches
           chooseBranch
-          break; ;;
+          return ;;
       "...more")
           echo 'revealing default-filtered branches'
           BRANCH_FILTER=""
           chooseBranch
-          break; ;;
+          return ;;
       "!exit")
-          break; ;;
+          return ;;
       *)
           BRANCH=$(noColor "${OPTION}")
           triggerBuilds ${BRANCH}
-          break; ;;
+          return ;;
   esac
 }
 
